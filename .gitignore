@@ -9,6 +9,11 @@ lerna-debug.log*
 
 node_modules
 dist
+
+# Server environment (contains credentials)
+server/.env
+.env
+server/node_modules
 dist-ssr
 *.local
 

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "supabase": {
+      "type": "http",
+      "url": "http://supabasekong-coow4g8w44w84w8k0cskoggc.72.60.142.28.sslip.io/mcp"
+    }
+  }
+}

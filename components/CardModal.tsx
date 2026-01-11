@@ -1,14 +1,16 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { CardData, AttachmentType, LogAction, ColumnData, LogEntry } from '../types';
-import { X, Upload, Clock, MessageSquare, Activity, FileVideo, FileImage, Sparkles, Trash2, Calendar } from 'lucide-react';
+import { X, Upload, Clock, MessageSquare, Activity, FileVideo, FileImage, Sparkles, Trash2, Calendar, Eye } from 'lucide-react';
 import { generateCardDescription } from '../services/geminiService';
 import { useApp } from '../contexts/AppContext';
+import { useAuth } from '../contexts/AuthContext';
 
 interface CardModalProps {
   card: CardData;
   columns: ColumnData[];
   onClose: () => void;
   onUpdate: (updatedCard: CardData) => void;
+  onDelete?: (cardId: string) => void;
 }
 
 // Helper to format duration
@@ -26,11 +28,15 @@ const formatDuration = (ms: number) => {
   return parts.join(' ');
 };
 
-const CardModal: React.FC<CardModalProps> = ({ card, columns, onClose, onUpdate }) => {
+const CardModal: React.FC<CardModalProps> = ({ card, columns, onClose, onUpdate, onDelete }) => {
   const { t, language } = useApp();
+  const { user } = useAuth();
   const [newComment, setNewComment] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Lightbox state for media preview
+  const [lightboxMedia, setLightboxMedia] = useState<{ url: string; type: AttachmentType; name: string } | null>(null);
 
   // Calculate current running time for the active column
   const [currentStayDuration, setCurrentStayDuration] = useState(0);
@@ -77,10 +83,21 @@ const CardModal: React.FC<CardModalProps> = ({ card, columns, onClose, onUpdate 
 
   const handleAddComment = () => {
     if (!newComment.trim()) return;
+
+    // Determine author name
+    let authorName = t('guest');
+    if (user) {
+      if (user.user_metadata?.full_name) {
+        authorName = user.user_metadata.full_name;
+      } else if (user.email) {
+        authorName = user.email;
+      }
+    }
+
     const comment = {
       id: Math.random().toString(36),
       text: newComment,
-      author: t('guest'),
+      author: authorName,
       createdAt: Date.now()
     };
     
@@ -135,9 +152,25 @@ const CardModal: React.FC<CardModalProps> = ({ card, columns, onClose, onUpdate 
               <span>{t('current_stay')}: {formatDuration(currentStayDuration)}</span>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-full transition-colors">
-            <X className="w-6 h-6 text-gray-500 dark:text-slate-400" />
-          </button>
+          <div className="flex items-center gap-2">
+            {onDelete && (
+              <button
+                onClick={() => {
+                  if (confirm(t('delete_card_confirm') || 'Tem certeza que deseja excluir este card?')) {
+                    onDelete(card.id);
+                    onClose();
+                  }
+                }}
+                className="p-2 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-full transition-colors"
+                title={t('delete') || 'Delete'}
+              >
+                <Trash2 className="w-6 h-6 text-red-500 dark:text-red-400" />
+              </button>
+            )}
+            <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-full transition-colors">
+              <X className="w-6 h-6 text-gray-500 dark:text-slate-400" />
+            </button>
+          </div>
         </div>
 
         {/* Content */}
@@ -193,23 +226,41 @@ const CardModal: React.FC<CardModalProps> = ({ card, columns, onClose, onUpdate 
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                 {card.attachments.map(att => (
                   <div key={att.id} className="group relative aspect-video bg-gray-100 dark:bg-slate-950 rounded-lg overflow-hidden border border-gray-200 dark:border-slate-700">
-                    {att.type === AttachmentType.VIDEO ? (
-                      <video src={att.url} controls className="w-full h-full object-cover" />
-                    ) : (
-                      <img src={att.url} alt={att.name} className="w-full h-full object-cover" />
-                    )}
-                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                       <button 
-                        onClick={() => {
-                          onUpdate({
-                            ...card,
-                            attachments: card.attachments.filter(a => a.id !== att.id)
-                          })
-                        }}
-                        className="text-white bg-red-600 p-2 rounded-full hover:bg-red-700"
-                       >
-                         <Trash2 className="w-4 h-4" />
-                       </button>
+                    {/* Clickable thumbnail for lightbox preview */}
+                    <div 
+                      className="w-full h-full cursor-pointer"
+                      onClick={() => setLightboxMedia({ url: att.url, type: att.type, name: att.name })}
+                    >
+                      {att.type === AttachmentType.VIDEO ? (
+                        <>
+                          <video src={att.url} className="w-full h-full object-cover" muted />
+                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                            <div className="w-12 h-12 bg-black/50 rounded-full flex items-center justify-center">
+                              <div className="w-0 h-0 border-t-8 border-t-transparent border-l-12 border-l-white border-b-8 border-b-transparent ml-1" />
+                            </div>
+                          </div>
+                        </>
+                      ) : (
+                        <img src={att.url} alt={att.name} className="w-full h-full object-cover" />
+                      )}
+                    </div>
+                    {/* Delete button - small icon on top-left */}
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onUpdate({
+                          ...card,
+                          attachments: card.attachments.filter(a => a.id !== att.id)
+                        })
+                      }}
+                      className="absolute top-1 left-1 bg-red-600 hover:bg-red-700 text-white p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                      title={t('delete') || 'Delete'}
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                    {/* Preview indicator on hover */}
+                    <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none flex items-center justify-center">
+                      <Eye className="w-6 h-6 text-white drop-shadow-lg" />
                     </div>
                   </div>
                 ))}
@@ -310,6 +361,48 @@ const CardModal: React.FC<CardModalProps> = ({ card, columns, onClose, onUpdate 
           </div>
         </div>
       </div>
+
+      {/* Lightbox Modal for Media Preview */}
+      {lightboxMedia && (
+        <div 
+          className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4"
+          onClick={() => setLightboxMedia(null)}
+        >
+          {/* Close button */}
+          <button 
+            className="absolute top-4 right-4 text-white hover:text-gray-300 transition-colors z-10"
+            onClick={() => setLightboxMedia(null)}
+          >
+            <X className="w-8 h-8" />
+          </button>
+          
+          {/* Media name */}
+          <div className="absolute top-4 left-4 text-white text-sm font-medium truncate max-w-[60%]">
+            {lightboxMedia.name}
+          </div>
+
+          {/* Media content */}
+          <div 
+            className="max-w-[90vw] max-h-[90vh] flex items-center justify-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {lightboxMedia.type === AttachmentType.VIDEO ? (
+              <video 
+                src={lightboxMedia.url} 
+                controls 
+                autoPlay
+                className="max-w-full max-h-[85vh] rounded-lg shadow-2xl"
+              />
+            ) : (
+              <img 
+                src={lightboxMedia.url} 
+                alt={lightboxMedia.name} 
+                className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl"
+              />
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

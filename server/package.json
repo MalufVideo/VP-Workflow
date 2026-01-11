@@ -1,0 +1,19 @@
+{
+  "name": "vp-workflow-email-server",
+  "version": "1.0.0",
+  "description": "Email API server for VP Workflow",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "imap": "^0.8.19",
+    "mailparser": "^3.6.5",
+    "nodemailer": "^6.9.7"
+  }
+}
